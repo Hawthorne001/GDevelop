@@ -6,7 +6,7 @@ import { t } from '@lingui/macro';
 
 import * as React from 'react';
 import SearchBar, { type SearchBarInterface } from '../UI/SearchBar';
-import VariablesEditorDialog from '../VariablesList/VariablesEditorDialog';
+import GlobalVariablesDialog from '../VariablesList/GlobalVariablesDialog';
 import ProjectPropertiesDialog from './ProjectPropertiesDialog';
 import newNameGenerator from '../Utils/NewNameGenerator';
 import ExtensionsSearchDialog from '../AssetStore/ExtensionStore/ExtensionsSearchDialog';
@@ -17,7 +17,6 @@ import { type UnsavedChanges } from '../MainFrame/UnsavedChangesContext';
 import ProjectManagerCommands from './ProjectManagerCommands';
 import { type HotReloadPreviewButtonProps } from '../HotReload/HotReloadPreviewButton';
 import { type ExtensionShortHeader } from '../Utils/GDevelopServices/Extension';
-import EventsRootVariablesFinder from '../Utils/EventsRootVariablesFinder';
 import { type ResourceManagementProps } from '../ResourcesList/ResourceSource';
 import InstalledExtensionDetails from './InstalledExtensionDetails';
 import { useShouldAutofocusInput } from '../UI/Responsive/ScreenTypeMeasurer';
@@ -116,6 +115,7 @@ export interface TreeViewItemContent {
   getName(): string | React.Node;
   getId(): string;
   getHtmlId(index: number): ?string;
+  getDataSet(): { [string]: string };
   getThumbnail(): ?string;
   onClick(): void;
   buildMenuTemplate(i18n: I18nType, index: number): Array<MenuItemTemplate>;
@@ -182,6 +182,7 @@ class PlaceHolderTreeViewItem implements TreeViewItem {
 class LabelTreeViewItemContent implements TreeViewItemContent {
   id: string;
   label: string | React.Node;
+  dataSet: { [string]: string };
   buildMenuTemplateFunction: (
     i18n: I18nType,
     index: number
@@ -199,6 +200,7 @@ class LabelTreeViewItemContent implements TreeViewItemContent {
       rightButton
         ? [
             {
+              id: rightButton.id,
               label: rightButton.label,
               click: rightButton.click,
             },
@@ -221,6 +223,10 @@ class LabelTreeViewItemContent implements TreeViewItemContent {
 
   getHtmlId(index: number): ?string {
     return this.id;
+  }
+
+  getDataSet(): { [string]: string } {
+    return {};
   }
 
   getThumbnail(): ?string {
@@ -307,6 +313,10 @@ class ActionTreeViewItemContent implements TreeViewItemContent {
     return this.id;
   }
 
+  getDataSet(): { [string]: string } {
+    return {};
+  }
+
   getThumbnail(): ?string {
     return this.thumbnail;
   }
@@ -358,7 +368,8 @@ const getTreeViewItemChildren = (i18n: I18nType) => (item: TreeViewItem) =>
   item.getChildren(i18n);
 const getTreeViewItemThumbnail = (item: TreeViewItem) =>
   item.content.getThumbnail();
-const getTreeViewItemData = (item: TreeViewItem) => null;
+const getTreeViewItemDataSet = (item: TreeViewItem) =>
+  item.content.getDataSet();
 const buildMenuTemplate = (i18n: I18nType) => (
   item: TreeViewItem,
   index: number
@@ -1016,6 +1027,7 @@ const ProjectManager = React.forwardRef<Props, ProjectManagerInterface>(
                   const index = project.getLayoutsCount() - 1;
                   addNewScene(index, i18n);
                 },
+                id: 'add-new-scene-button',
               }
             ),
             getChildren(i18n: I18nType): ?Array<TreeViewItem> {
@@ -1049,6 +1061,7 @@ const ProjectManager = React.forwardRef<Props, ProjectManagerInterface>(
                 icon: <Add />,
                 label: i18n._(t`Create or search for new extensions`),
                 click: openSearchExtensionDialog,
+                id: 'project-manager-extension-search-or-create',
               }
             ),
             getChildren(i18n: I18nType): ?Array<TreeViewItem> {
@@ -1086,6 +1099,7 @@ const ProjectManager = React.forwardRef<Props, ProjectManagerInterface>(
                   const index = project.getExternalEventsCount() - 1;
                   addExternalEvents(index, i18n);
                 },
+                id: 'add-new-external-events-button',
               }
             ),
             getChildren(i18n: I18nType): ?Array<TreeViewItem> {
@@ -1123,6 +1137,7 @@ const ProjectManager = React.forwardRef<Props, ProjectManagerInterface>(
                   const index = project.getExternalLayoutsCount() - 1;
                   addExternalLayout(index, i18n);
                 },
+                id: 'add-new-external-layout-button',
               }
             ),
             getChildren(i18n: I18nType): ?Array<TreeViewItem> {
@@ -1130,7 +1145,7 @@ const ProjectManager = React.forwardRef<Props, ProjectManagerInterface>(
                 return [
                   new PlaceHolderTreeViewItem(
                     externalLayoutEmptyPlaceholderId,
-                    i18n._(t`Start by adding new a external layout.`)
+                    i18n._(t`Start by adding a new external layout.`)
                   ),
                 ];
               }
@@ -1275,7 +1290,7 @@ const ProjectManager = React.forwardRef<Props, ProjectManagerInterface>(
                         multiSelect={false}
                         getItemId={getTreeViewItemId}
                         getItemHtmlId={getTreeViewItemHtmlId}
-                        getItemDataset={getTreeViewItemData}
+                        getItemDataset={getTreeViewItemDataSet}
                         onEditItem={editItem}
                         onCollapseItem={onCollapseItem}
                         selectedItems={selectedItems}
@@ -1318,34 +1333,16 @@ const ProjectManager = React.forwardRef<Props, ProjectManagerInterface>(
                   />
                 )}
                 {projectVariablesEditorOpen && (
-                  <VariablesEditorDialog
+                  <GlobalVariablesDialog
                     project={project}
-                    title={<Trans>Global Variables</Trans>}
                     open
-                    variablesContainer={project.getVariables()}
                     onCancel={() => setProjectVariablesEditorOpen(false)}
                     onApply={() => {
                       if (unsavedChanges)
                         unsavedChanges.triggerUnsavedChanges();
                       setProjectVariablesEditorOpen(false);
                     }}
-                    emptyPlaceholderTitle={
-                      <Trans>Add your first global variable</Trans>
-                    }
-                    emptyPlaceholderDescription={
-                      <Trans>
-                        These variables hold additional information on a
-                        project.
-                      </Trans>
-                    }
-                    helpPagePath={'/all-features/variables/global-variables'}
                     hotReloadPreviewButtonProps={hotReloadPreviewButtonProps}
-                    onComputeAllVariableNames={() =>
-                      EventsRootVariablesFinder.findAllGlobalVariables(
-                        project.getCurrentPlatform(),
-                        project
-                      )
-                    }
                   />
                 )}
                 {openGameDetails && (
@@ -1385,7 +1382,7 @@ const ProjectManager = React.forwardRef<Props, ProjectManagerInterface>(
                     open
                     project={project}
                     layout={editedVariablesLayout}
-                    onClose={() => onOpenLayoutVariables(null)}
+                    onCancel={() => onOpenLayoutVariables(null)}
                     onApply={() => {
                       if (unsavedChanges)
                         unsavedChanges.triggerUnsavedChanges();

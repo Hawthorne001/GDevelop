@@ -19,6 +19,7 @@
 #include "GDCore/IDE/Events/EventsPropertyReplacer.h"
 #include "GDCore/IDE/Events/EventsRefactorer.h"
 #include "GDCore/IDE/Events/EventsVariableReplacer.h"
+#include "GDCore/IDE/Events/EventsVariableInstructionTypeSwitcher.h"
 #include "GDCore/IDE/Events/ExpressionsParameterMover.h"
 #include "GDCore/IDE/Events/ExpressionsRenamer.h"
 #include "GDCore/IDE/Events/InstructionsParameterMover.h"
@@ -140,7 +141,6 @@ void WholeProjectRefactorer::EnsureObjectEventsFunctionsProperParameters(
 
 VariablesChangeset
 WholeProjectRefactorer::ComputeChangesetForVariablesContainer(
-    gd::Project &project,
     const gd::SerializerElement &oldSerializedVariablesContainer,
     const gd::VariablesContainer &newVariablesContainer) {
   gd::VariablesChangeset changeset;
@@ -180,6 +180,11 @@ WholeProjectRefactorer::ComputeChangesetForVariablesContainer(
         changeset.oldToNewVariableNames[oldName] = variableName;
       }
 
+      const auto &oldVariable = oldVariablesContainer.Get(oldName);
+      if (gd::WholeProjectRefactorer::HasAnyVariableTypeChanged(oldVariable, variable)) {
+        changeset.typeChangedVariableNames.insert(variableName);
+      }
+
       // Renamed or not, this is not a removed variable.
       removedUuidAndNames.erase(variable.GetPersistentUuid());
     }
@@ -192,14 +197,73 @@ WholeProjectRefactorer::ComputeChangesetForVariablesContainer(
   return changeset;
 }
 
+bool WholeProjectRefactorer::HasAnyVariableTypeChanged(
+    const gd::Variable &oldVariable, const gd::Variable &newVariable) {
+  if (newVariable.GetType() != oldVariable.GetType()) {
+    return true;
+  }
+
+  if (newVariable.GetChildrenCount() == 0 ||
+      oldVariable.GetChildrenCount() == 0) {
+    return false;
+  }
+
+  std::unordered_map<gd::String, gd::String> removedUuidAndNames;
+  for (const auto &pair : oldVariable.GetAllChildren()) {
+    const auto &oldName = pair.first;
+    const auto oldChild = pair.second;
+
+    // All variables are candidate to be removed.
+    removedUuidAndNames[oldChild->GetPersistentUuid()] = oldName;
+  }
+
+  for (const auto &pair : newVariable.GetAllChildren()) {
+    const auto &newName = pair.first;
+    const auto newChild = pair.second;
+
+    auto existingOldVariableUuidAndName =
+        removedUuidAndNames.find(newChild->GetPersistentUuid());
+    if (existingOldVariableUuidAndName == removedUuidAndNames.end()) {
+      // This is a new variable.
+      continue;
+    }
+    const gd::String &oldName = existingOldVariableUuidAndName->second;
+    const auto &oldChild = oldVariable.GetChild(oldName);
+
+    if (gd::WholeProjectRefactorer::HasAnyVariableTypeChanged(oldChild,
+                                                              *newChild)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 void WholeProjectRefactorer::ApplyRefactoringForVariablesContainer(
-    gd::Project &project, const gd::VariablesContainer &newVariablesContainer,
-    const gd::VariablesChangeset &changeset) {
+    gd::Project &project, gd::VariablesContainer &variablesContainer,
+    const gd::VariablesChangeset &changeset,
+    const gd::SerializerElement &originalSerializedVariables) {
+  // Revert changes
+  gd::SerializerElement editedSerializedVariables;
+  variablesContainer.SerializeTo(editedSerializedVariables);
+  variablesContainer.UnserializeFrom(originalSerializedVariables);
+
+  // Rename and remove variables
   gd::EventsVariableReplacer eventsVariableReplacer(
-      project.GetCurrentPlatform(), newVariablesContainer,
+      project.GetCurrentPlatform(), variablesContainer,
       changeset.oldToNewVariableNames, changeset.removedVariableNames);
   gd::ProjectBrowserHelper::ExposeProjectEvents(project,
                                                 eventsVariableReplacer);
+
+  // Apply back changes
+  variablesContainer.UnserializeFrom(editedSerializedVariables);
+
+  // Switch types of instructions
+  gd::EventsVariableInstructionTypeSwitcher
+      eventsVariableInstructionTypeSwitcher(project.GetCurrentPlatform(),
+                                            variablesContainer,
+                                            changeset.typeChangedVariableNames);
+  gd::ProjectBrowserHelper::ExposeProjectEvents(
+      project, eventsVariableInstructionTypeSwitcher);
 }
 
 void WholeProjectRefactorer::UpdateExtensionNameInEventsBasedBehavior(
@@ -208,7 +272,7 @@ void WholeProjectRefactorer::UpdateExtensionNameInEventsBasedBehavior(
     gd::EventsBasedBehavior &eventsBasedBehavior,
     const gd::String &sourceExtensionName) {
   const EventBasedBehaviorBrowser eventBasedBehaviorExposer(
-      eventsBasedBehavior);
+      eventsFunctionsExtension, eventsBasedBehavior);
   WholeProjectRefactorer::RenameEventsFunctionsExtension(
       project, eventsFunctionsExtension, sourceExtensionName,
       eventsFunctionsExtension.GetName(), eventBasedBehaviorExposer);
@@ -724,7 +788,7 @@ void WholeProjectRefactorer::RenameEventsBasedBehaviorProperty(
                                               oldPropertyName, newPropertyName);
 
     gd::ProjectBrowserHelper::ExposeEventsBasedBehaviorEvents(
-        project, eventsBasedBehavior, behaviorRenamer);
+        project, eventsFunctionsExtension, eventsBasedBehavior, behaviorRenamer);
   } else {
     // Properties that represent primitive values will be used through
     // their related actions/conditions/expressions. Rename these.
@@ -794,7 +858,7 @@ void WholeProjectRefactorer::RenameEventsBasedBehaviorSharedProperty(
                                               oldPropertyName, newPropertyName);
 
     gd::ProjectBrowserHelper::ExposeEventsBasedBehaviorEvents(
-        project, eventsBasedBehavior, behaviorRenamer);
+        project, eventsFunctionsExtension, eventsBasedBehavior, behaviorRenamer);
   } else {
     // Properties that represent primitive values will be used through
     // their related actions/conditions/expressions. Rename these.

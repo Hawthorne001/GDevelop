@@ -4,6 +4,7 @@
  * reserved. This project is released under the MIT License.
  */
 #pragma once
+
 #include <map>
 #include <memory>
 #include <unordered_map>
@@ -12,6 +13,7 @@
 
 #include "GDCore/IDE/Events/ArbitraryEventsWorker.h"
 #include "GDCore/String.h"
+
 namespace gd {
 class BaseEvent;
 class VariablesContainer;
@@ -38,7 +40,7 @@ class GD_CORE_API EventsVariableReplacer
       : platform(platform_),
         targetVariablesContainer(targetVariablesContainer_),
         oldToNewVariableNames(oldToNewVariableNames_),
-        removedVariableNames(removedVariableNames_){};
+        removedVariableNames(removedVariableNames_) {};
   virtual ~EventsVariableReplacer();
 
  private:
