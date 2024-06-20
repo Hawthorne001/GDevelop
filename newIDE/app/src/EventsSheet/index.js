@@ -115,6 +115,7 @@ import {
 import { insertInVariablesContainer } from '../Utils/VariablesUtils';
 import { ProjectScopedContainersAccessor } from '../InstructionOrExpression/EventsScope.flow';
 import LocalVariablesDialog from '../VariablesList/LocalVariablesDialog';
+import GlobalAndSceneVariablesDialog from '../VariablesList/GlobalAndSceneVariablesDialog';
 
 const gd: libGDevelop = global.gd;
 
@@ -201,6 +202,8 @@ type State = {|
   showSearchPanel: boolean,
   searchResults: ?Array<gdBaseEvent>,
   searchFocusOffset: ?number,
+
+  layoutVariablesDialogOpen: boolean,
 
   allEventsMetadata: Array<EventMetadata>,
 
@@ -294,6 +297,8 @@ export class EventsSheetComponentWithoutHandle extends React.Component<
     searchResults: null,
     searchFocusOffset: null,
 
+    layoutVariablesDialogOpen: false,
+
     allEventsMetadata: [],
 
     textEditedEvent: null,
@@ -379,6 +384,7 @@ export class EventsSheetComponentWithoutHandle extends React.Component<
         onToggleSearchPanel={this._toggleSearchPanel}
         canMoveEventsIntoNewGroup={hasSomethingSelected(this.state.selection)}
         moveEventsIntoNewGroup={this.moveEventsIntoNewGroup}
+        onOpenSceneVariables={this.editLayoutVariables}
       />
     );
   }
@@ -697,6 +703,10 @@ export class EventsSheetComponentWithoutHandle extends React.Component<
         eventContext,
       },
     });
+  };
+
+  editLayoutVariables = (open: boolean = true) => {
+    this.setState({ layoutVariablesDialogOpen: open });
   };
 
   openVariablesEditor = (
@@ -1917,6 +1927,7 @@ export class EventsSheetComponentWithoutHandle extends React.Component<
                 <EventsTree
                   ref={eventsTree => (this._eventsTree = eventsTree)}
                   key={events.ptr}
+                  indentScale={preferences.values.eventsSheetIndentScale}
                   onScroll={this._ensureFocused}
                   events={events}
                   project={project}
@@ -2138,6 +2149,16 @@ export class EventsSheetComponentWithoutHandle extends React.Component<
                     initiallySelectedVariableName={
                       this.state.editedVariable.variableName
                     }
+                  />
+                )}
+                {this.state.layoutVariablesDialogOpen && (
+                  <GlobalAndSceneVariablesDialog
+                    projectScopedContainersAccessor={
+                      projectScopedContainersAccessor
+                    }
+                    open
+                    onCancel={() => this.editLayoutVariables(false)}
+                    onApply={() => this.editLayoutVariables(false)}
                   />
                 )}
                 {this.state.textEditedEvent && (

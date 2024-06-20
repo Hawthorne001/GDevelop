@@ -194,6 +194,7 @@ export type PreferencesValues = {|
   autosaveOnPreview: boolean,
   useGDJSDevelopmentWatcher: boolean,
   eventsSheetUseAssignmentOperators: boolean,
+  eventsSheetIndentScale: number,
   eventsSheetZoomLevel: number,
   showEffectParameterNames: boolean,
   projectLastUsedPaths: { [string]: { [ResourceKind]: string } },
@@ -224,6 +225,7 @@ export type PreferencesValues = {|
   newFeaturesAcknowledgements: {
     [featureId: string]: {| dates: [number] |},
   },
+  displaySaveReminder: {| activated: boolean |}, // Store as object in case we need to add options.
   editorStateByProject: { [string]: { editorTabs: EditorTabsPersistedState } },
 |};
 
@@ -249,6 +251,7 @@ export type Preferences = {|
   setAutosaveOnPreview: (enabled: boolean) => void,
   setUseGDJSDevelopmentWatcher: (enabled: boolean) => void,
   setEventsSheetUseAssignmentOperators: (enabled: boolean) => void,
+  setEventsSheetIndentScale: (scale: number) => void,
   setEventsSheetZoomLevel: (zoomLevel: number) => void,
   setShowEffectParameterNames: (enabled: boolean) => void,
   getLastUsedPath: (project: gdProject, kind: ResourceKind) => string,
@@ -313,6 +316,7 @@ export type Preferences = {|
   setNewFeaturesAcknowledgements: ({
     [featureId: string]: {| dates: [number] |},
   }) => void,
+  setDisplaySaveReminder: ({| activated: boolean |}) => void,
   getEditorStateForProject: (
     projectId: string
   ) => ?{| editorTabs: EditorTabsPersistedState |},
@@ -343,6 +347,7 @@ export const initialPreferences = {
     useGDJSDevelopmentWatcher: true,
     eventsSheetUseAssignmentOperators: false,
     eventsSheetZoomLevel: 14,
+    eventsSheetIndentScale: 1,
     showEffectParameterNames: false,
     projectLastUsedPaths: {},
     defaultEditorMosaicNodes: {},
@@ -370,6 +375,7 @@ export const initialPreferences = {
     useShortcutToClosePreviewWindow: true,
     watchProjectFolderFilesForLocalProjects: true,
     newFeaturesAcknowledgements: {},
+    displaySaveReminder: { activated: true },
     editorStateByProject: {},
   },
   setLanguage: () => {},
@@ -389,6 +395,7 @@ export const initialPreferences = {
   setAutosaveOnPreview: () => {},
   setUseGDJSDevelopmentWatcher: (enabled: boolean) => {},
   setEventsSheetUseAssignmentOperators: (enabled: boolean) => {},
+  setEventsSheetIndentScale: (scale: number) => {},
   setEventsSheetZoomLevel: (zoomLevel: number) => {},
   setShowEffectParameterNames: (enabled: boolean) => {},
   getLastUsedPath: (project: gdProject, kind: ResourceKind) => '',
@@ -436,6 +443,7 @@ export const initialPreferences = {
   setUseShortcutToClosePreviewWindow: () => {},
   setWatchProjectFolderFilesForLocalProjects: () => {},
   setNewFeaturesAcknowledgements: () => {},
+  setDisplaySaveReminder: () => {},
   getEditorStateForProject: projectId => {},
   setEditorStateForProject: (projectId, editorState) => {},
 };

@@ -1,6 +1,19 @@
 namespace gdjs {
   type Model3DAnimation = { name: string; source: string; loop: boolean };
 
+  type Model3DObjectNetworkSyncDataType = {
+    mt: number;
+    op: FloatPoint3D | null;
+    cp: FloatPoint3D | null;
+    anis: Model3DAnimation[];
+    ai: integer;
+    ass: float;
+    ap: boolean;
+  };
+
+  type Model3DObjectNetworkSyncData = Object3DNetworkSyncData &
+    Model3DObjectNetworkSyncDataType;
+
   /** Base parameters for {@link gdjs.Cube3DRuntimeObject} */
   export interface Model3DObjectData extends Object3DData {
     /** The base parameters of the Model3D object */
@@ -160,6 +173,49 @@ namespace gdjs {
         );
       }
       return true;
+    }
+
+    getNetworkSyncData(): Model3DObjectNetworkSyncData {
+      return {
+        ...super.getNetworkSyncData(),
+        mt: this._materialType,
+        op: this._originPoint,
+        cp: this._centerPoint,
+        anis: this._animations,
+        ai: this._currentAnimationIndex,
+        ass: this._animationSpeedScale,
+        ap: this._animationPaused,
+      };
+    }
+
+    updateFromNetworkSyncData(
+      networkSyncData: Model3DObjectNetworkSyncData
+    ): void {
+      super.updateFromNetworkSyncData(networkSyncData);
+
+      if (networkSyncData.mt !== undefined) {
+        this._materialType = networkSyncData.mt;
+      }
+      if (networkSyncData.op !== undefined) {
+        this._originPoint = networkSyncData.op;
+      }
+      if (networkSyncData.cp !== undefined) {
+        this._centerPoint = networkSyncData.cp;
+      }
+      if (networkSyncData.anis !== undefined) {
+        this._animations = networkSyncData.anis;
+      }
+      if (networkSyncData.ai !== undefined) {
+        this.setAnimationIndex(networkSyncData.ai);
+      }
+      if (networkSyncData.ass !== undefined) {
+        this.setAnimationSpeedScale(networkSyncData.ass);
+      }
+      if (networkSyncData.ap !== undefined) {
+        if (networkSyncData.ap !== this.isAnimationPaused()) {
+          networkSyncData.ap ? this.pauseAnimation() : this.resumeAnimation();
+        }
+      }
     }
 
     _updateModel(objectData: Model3DObjectData) {

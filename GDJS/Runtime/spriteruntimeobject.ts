@@ -14,6 +14,19 @@ namespace gdjs {
 
   export type SpriteObjectData = ObjectData & SpriteObjectDataType;
 
+  export type SpriteNetworkSyncDataType = {
+    anim: SpriteAnimatorNetworkSyncData;
+    ifx: boolean;
+    ify: boolean;
+    sx: float;
+    sy: float;
+    op: float;
+    color: string;
+  };
+
+  export type SpriteNetworkSyncData = ObjectNetworkSyncData &
+    SpriteNetworkSyncDataType;
+
   /**
    * The SpriteRuntimeObject represents an object that can display images.
    */
@@ -92,6 +105,55 @@ namespace gdjs {
       this._updateIfNotVisible = !!newObjectData.updateIfNotVisible;
       this.invalidateHitboxes();
       return true;
+    }
+
+    getNetworkSyncData(): SpriteNetworkSyncData {
+      return {
+        ...super.getNetworkSyncData(),
+        anim: this._animator.getNetworkSyncData(),
+        ifx: this.isFlippedX(),
+        ify: this.isFlippedY(),
+        sx: this._scaleX,
+        sy: this._scaleY,
+        op: this.opacity,
+        color: this.getColor(),
+      };
+    }
+
+    updateFromNetworkSyncData(newNetworkSyncData: SpriteNetworkSyncData) {
+      super.updateFromNetworkSyncData(newNetworkSyncData);
+      if (newNetworkSyncData.ifx !== undefined) {
+        this.flipX(newNetworkSyncData.ifx);
+      }
+      if (newNetworkSyncData.ify !== undefined) {
+        this.flipY(newNetworkSyncData.ify);
+      }
+      if (newNetworkSyncData.sx !== undefined) {
+        this.setScaleX(Math.abs(newNetworkSyncData.sx));
+      }
+      if (newNetworkSyncData.sy !== undefined) {
+        this.setScaleY(Math.abs(newNetworkSyncData.sy));
+      }
+      if (newNetworkSyncData.op !== undefined) {
+        this.setOpacity(newNetworkSyncData.op);
+      }
+      if (newNetworkSyncData.anim) {
+        this._animator.updateFromNetworkSyncData(newNetworkSyncData.anim);
+        // TODO: optimize updating the animation frame only if needed.
+        this._updateAnimationFrame();
+      }
+      if (
+        newNetworkSyncData.ifx !== undefined ||
+        newNetworkSyncData.ify !== undefined ||
+        newNetworkSyncData.sx !== undefined ||
+        newNetworkSyncData.sy !== undefined ||
+        newNetworkSyncData.anim !== undefined
+      ) {
+        this.invalidateHitboxes();
+      }
+      if (newNetworkSyncData.color !== undefined) {
+        this.setColor(newNetworkSyncData.color);
+      }
     }
 
     /**

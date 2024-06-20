@@ -54,6 +54,7 @@ const PreferencesDialog = ({ i18n, onClose }: Props) => {
     setAutosaveOnPreview,
     setUseGDJSDevelopmentWatcher,
     setEventsSheetUseAssignmentOperators,
+    setEventsSheetIndentScale,
     getDefaultEditorMosaicNode,
     setDefaultEditorMosaicNode,
     setAutoOpenMostRecentProject,
@@ -73,6 +74,7 @@ const PreferencesDialog = ({ i18n, onClose }: Props) => {
     setNewProjectsDefaultFolder,
     setUseShortcutToClosePreviewWindow,
     setWatchProjectFolderFilesForLocalProjects,
+    setDisplaySaveReminder,
   } = React.useContext(PreferencesContext);
 
   const initialUse3DEditor = React.useRef<boolean>(values.use3DEditor);
@@ -289,6 +291,23 @@ const PreferencesDialog = ({ i18n, onClose }: Props) => {
             label={<Trans>Display assignment operators in Events Sheets</Trans>}
           />
           <SelectField
+            floatingLabelText={<Trans>Indent Scale in Events Sheet</Trans>}
+            fullWidth
+            value={values.eventsSheetIndentScale.toString()}
+            onChange={(e, i, value) => {
+              setEventsSheetIndentScale(parseInt(value, 10));
+            }}
+          >
+            <SelectOption value="1" label={t`100% (Default)`} />
+            <SelectOption value="2" label={t`200%`} />
+            <SelectOption value="3" label={t`300%`} />
+            <SelectOption value="4" label={t`400%`} />
+            <SelectOption value="5" label={t`500%`} />
+            <SelectOption value="6" label={t`600%`} />
+            <SelectOption value="7" label={t`700%`} />
+            <SelectOption value="8" label={t`800%`} />
+          </SelectField>
+          <SelectField
             floatingLabelText={
               <Trans>
                 Escape key behavior when editing an parameter inline
@@ -337,6 +356,18 @@ const PreferencesDialog = ({ i18n, onClose }: Props) => {
             toggled={values.autosaveOnPreview}
             labelPosition="right"
             label={<Trans>Auto-save project on Preview</Trans>}
+          />
+          <Toggle
+            onToggle={(e, check) =>
+              setDisplaySaveReminder({ activated: check })
+            }
+            toggled={values.displaySaveReminder.activated}
+            labelPosition="right"
+            label={
+              <Trans>
+                Display save reminder after significant changes in project
+              </Trans>
+            }
           />
           <Toggle
             onToggle={(e, check) => setAutoOpenMostRecentProject(check)}

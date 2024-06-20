@@ -110,6 +110,11 @@ module.exports = function (config) {
       './newIDE/app/resources/GDJS/Runtime/Extensions/Leaderboards/leaderboardstools.js',
       './newIDE/app/resources/GDJS/Runtime/Extensions/PlayerAuthentication/playerauthenticationtools.js',
       './newIDE/app/resources/GDJS/Runtime/Extensions/PlayerAuthentication/playerauthenticationcomponents.js',
+      './newIDE/app/resources/GDJS/Runtime/Extensions/Multiplayer/messageManager.js',
+      './newIDE/app/resources/GDJS/Runtime/Extensions/Multiplayer/multiplayerVariablesManager.js',
+      './newIDE/app/resources/GDJS/Runtime/Extensions/Multiplayer/multiplayertools.js',
+      './newIDE/app/resources/GDJS/Runtime/Extensions/Multiplayer/multiplayercomponents.js',
+      './newIDE/app/resources/GDJS/Runtime/Extensions/Multiplayer/multiplayerobjectruntimebehavior.js',
       './newIDE/app/resources/GDJS/Runtime/Extensions/Lighting/lightruntimeobject.js',
       './newIDE/app/resources/GDJS/Runtime/Extensions/Lighting/lightruntimeobject-pixi-renderer.js',
       './newIDE/app/resources/GDJS/Runtime/Extensions/Lighting/lightobstacleruntimebehavior.js',
@@ -159,6 +164,15 @@ module.exports = function (config) {
 
       // Test helpers
       './Extensions/PlatformBehavior/tests/PlatformerTestHelper.js',
+
+      // Source maps
+      {
+        pattern: './newIDE/app/resources/GDJS/Runtime/**/*.map',
+        watched: false,
+        included: false,
+        served: true,
+        nocache: true,
+      },
 
       // Assets
       {

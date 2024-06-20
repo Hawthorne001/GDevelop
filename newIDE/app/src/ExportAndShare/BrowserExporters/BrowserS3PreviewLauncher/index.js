@@ -13,8 +13,9 @@ import {
   registerNewPreviewWindow,
 } from './BrowserPreviewDebuggerServer';
 import Window from '../../../Utils/Window';
-import { displayBlackLoadingScreen } from '../../../Utils/BrowserExternalWindowUtils';
+import { displayBlackLoadingScreenOrThrow } from '../../../Utils/BrowserExternalWindowUtils';
 import { getGDevelopResourceJwtToken } from '../../../Utils/GDevelopServices/Project';
+import { isNativeMobileApp } from '../../../Utils/Platform';
 const gd: libGDevelop = global.gd;
 
 type State = {|
@@ -47,8 +48,13 @@ export const immediatelyOpenNewPreviewWindow = (
     targetId,
     `width=${width},height=${height},left=${left},top=${top}`
   );
+  if (!previewWindow) {
+    throw new Error(
+      "Can't open the preview window because of browser restrictions."
+    );
+  }
 
-  displayBlackLoadingScreen(previewWindow);
+  displayBlackLoadingScreenOrThrow(previewWindow);
 
   return previewWindow;
 };
@@ -96,7 +102,7 @@ export default class BrowserS3PreviewLauncher extends React.Component<
   };
 
   launchPreview = async (previewOptions: PreviewOptions): Promise<any> => {
-    const { project, layout, externalLayout } = previewOptions;
+    const { project, layout, externalLayout, numberOfWindows } = previewOptions;
     this.setState({
       error: null,
     });
@@ -115,8 +121,19 @@ export default class BrowserS3PreviewLauncher extends React.Component<
       ? getExistingPreviewWindowForDebuggerId(lastDebuggerId)
       : null;
 
-    const previewWindow =
-      existingPreviewWindow || immediatelyOpenNewPreviewWindow(project);
+    const previewWindows = existingPreviewWindow
+      ? [existingPreviewWindow]
+      : Array.from({ length: numberOfWindows }, () => {
+          try {
+            return immediatelyOpenNewPreviewWindow(project);
+          } catch (error) {
+            console.error(
+              'Unable to open a new preview window - this window will be ignored:',
+              error
+            );
+            return null;
+          }
+        }).filter(Boolean);
 
     try {
       await this.getPreviewDebuggerServer().startServer();
@@ -156,6 +173,8 @@ export default class BrowserS3PreviewLauncher extends React.Component<
         previewOptions.fullLoadingScreen
       );
 
+      previewExportOptions.setNativeMobileApp(isNativeMobileApp());
+
       if (previewOptions.fallbackAuthor) {
         previewExportOptions.setFallbackAuthor(
           previewOptions.fallbackAuthor.id,
@@ -177,12 +196,17 @@ export default class BrowserS3PreviewLauncher extends React.Component<
 
       // Change the HTML file displayed by the preview window so that it starts loading
       // the game.
-      previewWindow.location = outputDir + '/index.html';
+      previewWindows.forEach(
+        (previewWindow: WindowProxy) =>
+          (previewWindow.location = outputDir + '/index.html')
+      );
 
-      // If the preview window is a new one, register it so that it can be accessed
+      // If the preview windows are new, register them so that they can be accessed
       // by the debugger.
       if (!existingPreviewWindow) {
-        registerNewPreviewWindow(previewWindow);
+        previewWindows.forEach((previewWindow: WindowProxy) => {
+          registerNewPreviewWindow(previewWindow);
+        });
       }
     } catch (error) {
       this.setState({

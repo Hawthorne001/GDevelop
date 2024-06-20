@@ -4,6 +4,24 @@ Copyright (c) 2010-2016 Florian Rival (Florian.Rival@gmail.com)
  */
 
 namespace gdjs {
+  interface TopDownMovementNetworkSyncDataType {
+    a: float;
+    xv: float;
+    yv: float;
+    as: float;
+    lk: boolean;
+    rk: boolean;
+    uk: boolean;
+    dk: boolean;
+    wsu: boolean;
+    sa: float;
+    sf: float;
+  }
+
+  export interface TopDownMovementNetworkSyncData
+    extends BehaviorNetworkSyncData {
+    props: TopDownMovementNetworkSyncDataType;
+  }
   /**
    * Allows an object to move in 4 or 8 directions, with customizable speed, accelerations
    * and rotation.
@@ -41,6 +59,23 @@ namespace gdjs {
     private _stickAngle: float = 0;
     private _stickForce: float = 0;
 
+    // This is useful when the object is synchronized by an external source
+    // like in a multiplayer game, and we want to be able to predict the
+    // movement of the object, even if the inputs are not updated every frame.
+    _dontClearInputsBetweenFrames: boolean = false;
+    // This is useful when the object is synchronized over the network,
+    // object is controlled by the network and we want to ensure the current player
+    // cannot control it.
+    _ignoreDefaultControlsAsSyncedByNetwork: boolean = false;
+
+    // This is useful for extensions that need to know
+    // which keys were pressed and doesn't know the mapping
+    // done by the scene events.
+    private _wasLeftKeyPressed: boolean = false;
+    private _wasRightKeyPressed: boolean = false;
+    private _wasUpKeyPressed: boolean = false;
+    private _wasDownKeyPressed: boolean = false;
+
     // @ts-ignore The setter "setViewpoint" is not detected as an affectation.
     private _basisTransformation: gdjs.TopDownMovementRuntimeBehavior.BasisTransformation | null;
     private _temporaryPointForTransformations: FloatPoint = [0, 0];
@@ -68,6 +103,76 @@ namespace gdjs {
         behaviorData.customIsometryAngle
       );
       this._movementAngleOffset = behaviorData.movementAngleOffset || 0;
+    }
+
+    getNetworkSyncData(): TopDownMovementNetworkSyncData {
+      // This method is called, so we are synchronizing this object.
+      // Let's clear the inputs between frames as we control it.
+      this._dontClearInputsBetweenFrames = false;
+      this._ignoreDefaultControlsAsSyncedByNetwork = false;
+
+      return {
+        ...super.getNetworkSyncData(),
+        props: {
+          a: this._angle,
+          xv: this._xVelocity,
+          yv: this._yVelocity,
+          as: this._angularSpeed,
+          lk: this._wasLeftKeyPressed,
+          rk: this._wasRightKeyPressed,
+          uk: this._wasUpKeyPressed,
+          dk: this._wasDownKeyPressed,
+          wsu: this._wasStickUsed,
+          sa: this._stickAngle,
+          sf: this._stickForce,
+        },
+      };
+    }
+
+    updateFromNetworkSyncData(
+      networkSyncData: TopDownMovementNetworkSyncData
+    ): void {
+      super.updateFromNetworkSyncData(networkSyncData);
+
+      const behaviorSpecificProps = networkSyncData.props;
+      if (behaviorSpecificProps.a !== undefined) {
+        this._angle = behaviorSpecificProps.a;
+      }
+      if (behaviorSpecificProps.xv !== undefined) {
+        this._xVelocity = behaviorSpecificProps.xv;
+      }
+      if (behaviorSpecificProps.yv !== undefined) {
+        this._yVelocity = behaviorSpecificProps.yv;
+      }
+      if (behaviorSpecificProps.as !== undefined) {
+        this._angularSpeed = behaviorSpecificProps.as;
+      }
+      if (behaviorSpecificProps.lk !== undefined) {
+        this._leftKey = behaviorSpecificProps.lk;
+      }
+      if (behaviorSpecificProps.rk !== undefined) {
+        this._rightKey = behaviorSpecificProps.rk;
+      }
+      if (behaviorSpecificProps.uk !== undefined) {
+        this._upKey = behaviorSpecificProps.uk;
+      }
+      if (behaviorSpecificProps.dk !== undefined) {
+        this._downKey = behaviorSpecificProps.dk;
+      }
+      if (behaviorSpecificProps.wsu !== undefined) {
+        this._wasStickUsed = behaviorSpecificProps.wsu;
+      }
+      if (behaviorSpecificProps.sa !== undefined) {
+        this._stickAngle = behaviorSpecificProps.sa;
+      }
+      if (behaviorSpecificProps.sf !== undefined) {
+        this._stickForce = behaviorSpecificProps.sf;
+      }
+
+      // When the object is synchronized from the network, the inputs must not be cleared.
+      this._dontClearInputsBetweenFrames = true;
+      // And we are not using the default controls.
+      this._ignoreDefaultControlsAsSyncedByNetwork = true;
     }
 
     updateFromBehaviorData(oldBehaviorData, newBehaviorData): boolean {
@@ -244,22 +349,22 @@ namespace gdjs {
       const DOWNKEY = 40;
 
       //Get the player input:
-      // @ts-ignore
-      this._leftKey |=
-        !this._ignoreDefaultControls &&
-        instanceContainer.getGame().getInputManager().isKeyPressed(LEFTKEY);
-      // @ts-ignore
-      this._rightKey |=
-        !this._ignoreDefaultControls &&
-        instanceContainer.getGame().getInputManager().isKeyPressed(RIGHTKEY);
-      // @ts-ignore
-      this._downKey |=
-        !this._ignoreDefaultControls &&
-        instanceContainer.getGame().getInputManager().isKeyPressed(DOWNKEY);
-      // @ts-ignore
-      this._upKey |=
-        !this._ignoreDefaultControls &&
-        instanceContainer.getGame().getInputManager().isKeyPressed(UPKEY);
+      this._leftKey ||
+        (this._leftKey =
+          !this.shouldIgnoreDefaultControls() &&
+          instanceContainer.getGame().getInputManager().isKeyPressed(LEFTKEY));
+      this._rightKey ||
+        (this._rightKey =
+          !this.shouldIgnoreDefaultControls() &&
+          instanceContainer.getGame().getInputManager().isKeyPressed(RIGHTKEY));
+      this._downKey ||
+        (this._downKey =
+          !this.shouldIgnoreDefaultControls() &&
+          instanceContainer.getGame().getInputManager().isKeyPressed(DOWNKEY));
+      this._upKey ||
+        (this._upKey =
+          !this.shouldIgnoreDefaultControls() &&
+          instanceContainer.getGame().getInputManager().isKeyPressed(UPKEY));
 
       const elapsedTime = this.owner.getElapsedTime();
 
@@ -473,10 +578,16 @@ namespace gdjs {
         }
       }
 
-      this._leftKey = false;
-      this._rightKey = false;
-      this._upKey = false;
-      this._downKey = false;
+      this._wasLeftKeyPressed = this._leftKey;
+      this._wasRightKeyPressed = this._rightKey;
+      this._wasUpKeyPressed = this._upKey;
+      this._wasDownKeyPressed = this._downKey;
+      if (!this._dontClearInputsBetweenFrames) {
+        this._leftKey = false;
+        this._rightKey = false;
+        this._upKey = false;
+        this._downKey = false;
+      }
     }
 
     simulateControl(input: string) {
@@ -493,6 +604,13 @@ namespace gdjs {
 
     ignoreDefaultControls(ignore: boolean) {
       this._ignoreDefaultControls = ignore;
+    }
+
+    shouldIgnoreDefaultControls() {
+      return (
+        this._ignoreDefaultControls ||
+        this._ignoreDefaultControlsAsSyncedByNetwork
+      );
     }
 
     simulateLeftKey() {

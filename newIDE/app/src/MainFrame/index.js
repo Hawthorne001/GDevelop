@@ -142,7 +142,7 @@ import {
   sendInAppTutorialStarted,
   sendEventsExtractedAsFunction,
 } from '../Utils/Analytics/EventSender';
-import { useLeaderboardReplacer } from '../Leaderboard/useLeaderboardReplacer';
+import { useLeaderboardReplacer } from '../Leaderboard/UseLeaderboardReplacer';
 import useAlertDialog from '../UI/Alert/useAlertDialog';
 import NewProjectSetupDialog from '../ProjectCreation/NewProjectSetupDialog';
 import {
@@ -164,10 +164,6 @@ import {
   useStableUpToDateRef,
 } from '../Utils/UseStableUpToDateCallback';
 import { emptyStorageProvider } from '../ProjectsStorage/ProjectStorageProviders';
-import {
-  isMiniTutorial,
-  allInAppTutorialIds,
-} from '../Utils/GDevelopServices/InAppTutorial';
 import CustomDragLayer from '../UI/DragAndDrop/CustomDragLayer';
 import CloudProjectRecoveryDialog from '../ProjectsStorage/CloudStorageProvider/CloudProjectRecoveryDialog';
 import CloudProjectSaveChoiceDialog from '../ProjectsStorage/CloudStorageProvider/CloudProjectSaveChoiceDialog';
@@ -181,6 +177,8 @@ import { extractGDevelopApiErrorStatusAndCode } from '../Utils/GDevelopServices/
 import useVersionHistory from '../VersionHistory/UseVersionHistory';
 import { ProjectManagerDrawer } from '../ProjectManager/ProjectManagerDrawer';
 import DiagnosticReportDialog from '../ExportAndShare/DiagnosticReportDialog';
+import useSaveReminder from './UseSaveReminder';
+import { useMultiplayerLobbyConfigurator } from './UseMultiplayerLobbyConfigurator';
 
 const GD_STARTUP_TIMES = global.GD_STARTUP_TIMES || [];
 
@@ -268,6 +266,7 @@ type LaunchPreviewOptions = {
   projectDataOnlyExport?: boolean,
   fullLoadingScreen?: boolean,
   forceDiagnosticReport?: boolean,
+  numberOfWindows?: number,
 };
 
 export type Props = {|
@@ -412,10 +411,18 @@ const MainFrame = (props: Props) => {
     findLeaderboardsToReplace,
     renderLeaderboardReplacerDialog,
   } = useLeaderboardReplacer();
+  const {
+    configureMultiplayerLobbiesIfNeeded,
+  } = useMultiplayerLobbyConfigurator();
   const eventsFunctionsExtensionsState = React.useContext(
     EventsFunctionsExtensionsContext
   );
   const unsavedChanges = React.useContext(UnsavedChangesContext);
+  const {
+    hasUnsavedChanges,
+    sealUnsavedChanges,
+    triggerUnsavedChanges,
+  } = unsavedChanges;
   const {
     currentlyRunningInAppTutorial,
     getInAppTutorialShortHeader,
@@ -676,15 +683,6 @@ const MainFrame = (props: Props) => {
     getEditorOpeningOptions,
   });
 
-  useOpenInitialDialog({
-    openInAppTutorialDialog: (tutorialId: string) => {
-      if (allInAppTutorialIds.includes(tutorialId)) {
-        selectInAppTutorial(tutorialId);
-      }
-    },
-    openProfileDialog,
-  });
-
   const _closeSnackMessage = React.useCallback(
     () => {
       setState(state => ({
@@ -863,9 +861,7 @@ const MainFrame = (props: Props) => {
       );
       await eventsFunctionsExtensionsState.ensureLoadFinished();
       currentProject.delete();
-      if (unsavedChanges.hasUnsavedChanges) {
-        unsavedChanges.sealUnsavedChanges();
-      }
+      sealUnsavedChanges();
       console.info('Project closed.');
     },
     [
@@ -873,7 +869,7 @@ const MainFrame = (props: Props) => {
       eventsFunctionsExtensionsState,
       setHasProjectOpened,
       setState,
-      unsavedChanges,
+      sealUnsavedChanges,
     ]
   );
 
@@ -1111,6 +1107,7 @@ const MainFrame = (props: Props) => {
           );
           return state;
         } finally {
+          sealUnsavedChanges({ setCheckpointTime: true });
           serializedProject.delete();
         }
       } catch (error) {
@@ -1135,6 +1132,7 @@ const MainFrame = (props: Props) => {
       loadFromSerializedProject,
       showConfirmation,
       showAlert,
+      sealUnsavedChanges,
     ]
   );
 
@@ -1154,6 +1152,7 @@ const MainFrame = (props: Props) => {
       setNewProjectSetupDialogOpen(false);
       closeExampleStoreDialog({ deselectExampleAndGameTemplate: true });
       findLeaderboardsToReplace(project, oldProjectId);
+      configureMultiplayerLobbiesIfNeeded(project, oldProjectId);
       openSceneOrProjectManager({
         currentProject: project,
         editorTabs: editorTabs,
@@ -1500,7 +1499,6 @@ const MainFrame = (props: Props) => {
       if (!currentProject) return;
 
       const storageProviderOperations = getStorageProviderOperations();
-      const hasUnsavedChanges = unsavedChanges.hasUnsavedChanges;
       if (
         hasUnsavedChanges && // Only create an autosave if there are unsaved changes.
         preferences.values.autosaveOnPreview &&
@@ -1529,13 +1527,14 @@ const MainFrame = (props: Props) => {
       currentFileMetadata,
       getStorageProviderOperations,
       preferences.values.autosaveOnPreview,
-      unsavedChanges.hasUnsavedChanges,
+      hasUnsavedChanges,
     ]
   );
 
   const _launchPreview = React.useCallback(
-    ({
+    async ({
       networkPreview,
+      numberOfWindows,
       hotReload,
       projectDataOnlyExport,
       fullLoadingScreen,
@@ -1567,7 +1566,7 @@ const MainFrame = (props: Props) => {
           ? currentProject.getExternalLayout(externalLayoutName)
           : null;
 
-      autosaveProjectIfNeeded();
+      await autosaveProjectIfNeeded();
 
       // Note that in the future, this kind of checks could be done
       // and stored in a "diagnostic report", rather than hiding errors
@@ -1581,45 +1580,42 @@ const MainFrame = (props: Props) => {
           }
         : null;
 
-      eventsFunctionsExtensionsState
-        .ensureLoadFinished()
-        .then(() =>
-          previewLauncher.launchPreview({
-            project: currentProject,
-            layout,
-            externalLayout,
-            networkPreview: !!networkPreview,
-            hotReload: !!hotReload,
-            projectDataOnlyExport: !!projectDataOnlyExport,
-            fullLoadingScreen: !!fullLoadingScreen,
-            fallbackAuthor,
-            getIsMenuBarHiddenInPreview:
-              preferences.getIsMenuBarHiddenInPreview,
-            getIsAlwaysOnTopInPreview: preferences.getIsAlwaysOnTopInPreview,
-          })
-        )
-        .catch(error => {
-          console.error(
-            'Error caught while launching preview, this should never happen.',
-            error
-          );
-        })
-        .then(() => {
-          setPreviewLoading(false);
-          if (inAppTutorialOrchestratorRef.current) {
-            inAppTutorialOrchestratorRef.current.onPreviewLaunch();
-          }
-          if (!currentlyRunningInAppTutorial) {
-            const wholeProjectDiagnosticReport = currentProject.getWholeProjectDiagnosticReport();
-            if (
-              (forceDiagnosticReport ||
-                preferences.values.openDiagnosticReportAutomatically) &&
-              wholeProjectDiagnosticReport.hasAnyIssue()
-            ) {
-              setDiagnosticReportDialogOpen(true);
-            }
-          }
+      try {
+        await eventsFunctionsExtensionsState.ensureLoadFinished();
+
+        await previewLauncher.launchPreview({
+          project: currentProject,
+          layout,
+          externalLayout,
+          networkPreview: !!networkPreview,
+          hotReload: !!hotReload,
+          projectDataOnlyExport: !!projectDataOnlyExport,
+          fullLoadingScreen: !!fullLoadingScreen,
+          fallbackAuthor,
+          getIsMenuBarHiddenInPreview: preferences.getIsMenuBarHiddenInPreview,
+          getIsAlwaysOnTopInPreview: preferences.getIsAlwaysOnTopInPreview,
+          numberOfWindows: numberOfWindows || 1,
         });
+        setPreviewLoading(false);
+        if (inAppTutorialOrchestratorRef.current) {
+          inAppTutorialOrchestratorRef.current.onPreviewLaunch();
+        }
+        if (!currentlyRunningInAppTutorial) {
+          const wholeProjectDiagnosticReport = currentProject.getWholeProjectDiagnosticReport();
+          if (
+            (forceDiagnosticReport ||
+              preferences.values.openDiagnosticReportAutomatically) &&
+            wholeProjectDiagnosticReport.hasAnyIssue()
+          ) {
+            setDiagnosticReportDialogOpen(true);
+          }
+        }
+      } catch (error) {
+        console.error(
+          'Error caught while launching preview, this should never happen.',
+          error
+        );
+      }
     },
     [
       currentProject,
@@ -1646,7 +1642,10 @@ const MainFrame = (props: Props) => {
   );
 
   const launchNewPreview = React.useCallback(
-    () => launchPreview({ networkPreview: false }),
+    async options => {
+      const numberOfWindows = options ? options.numberOfWindows : 1;
+      launchPreview({ networkPreview: false, numberOfWindows });
+    },
     [launchPreview]
   );
 
@@ -1914,7 +1913,7 @@ const MainFrame = (props: Props) => {
   };
 
   const _onProjectItemModified = () => {
-    if (unsavedChanges) unsavedChanges.triggerUnsavedChanges();
+    triggerUnsavedChanges();
     forceUpdate();
   };
 
@@ -2130,17 +2129,13 @@ const MainFrame = (props: Props) => {
         openingMessage?: ?MessageDescriptor,
       |}
     ): Promise<void> => {
-      if (
-        unsavedChanges.hasUnsavedChanges &&
-        !(options && options.ignoreUnsavedChanges)
-      ) {
+      if (hasUnsavedChanges && !(options && options.ignoreUnsavedChanges)) {
         const answer = Window.showConfirmDialog(
           i18n._(
             t`Open a new project? Any changes that have not been saved will be lost.`
           )
         );
         if (!answer) return;
-        unsavedChanges.sealUnsavedChanges();
       }
 
       const { fileMetadata } = fileMetadataAndStorageProviderName;
@@ -2203,7 +2198,8 @@ const MainFrame = (props: Props) => {
       openSceneOrProjectManager,
       props.storageProviders,
       getStorageProviderOperations,
-      unsavedChanges,
+      hasUnsavedChanges,
+
       getStorageProvider,
       setHasProjectOpened,
       openAllScenes,
@@ -2354,7 +2350,7 @@ const MainFrame = (props: Props) => {
 
         if (!wasSaved) return; // Save was cancelled, don't do anything.
 
-        unsavedChanges.sealUnsavedChanges();
+        sealUnsavedChanges({ setCheckpointTime: true });
         _replaceSnackMessage(i18n._(t`Project properly saved`));
         setCloudProjectSaveChoiceOpen(false);
         setCloudProjectRecoveryOpenedVersionId(null);
@@ -2374,7 +2370,7 @@ const MainFrame = (props: Props) => {
         preferences.insertRecentProjectFile(fileMetadataAndStorageProviderName);
         if (
           currentlyRunningInAppTutorial &&
-          !isMiniTutorial(currentlyRunningInAppTutorial.id) && // Don't save the progress of mini-tutorials
+          !currentlyRunningInAppTutorial.isMiniTutorial && // Don't save the progress of mini-tutorials
           inAppTutorialOrchestratorRef.current
         ) {
           preferences.saveTutorialProgress({
@@ -2424,7 +2420,7 @@ const MainFrame = (props: Props) => {
       currentProjectRef,
       currentFileMetadata,
       getStorageProviderOperations,
-      unsavedChanges,
+      sealUnsavedChanges,
       setState,
       state.editorTabs,
       _replaceSnackMessage,
@@ -2566,7 +2562,7 @@ const MainFrame = (props: Props) => {
           );
           if (
             currentlyRunningInAppTutorial &&
-            !isMiniTutorial(currentlyRunningInAppTutorial.id) && // Don't save the progress of mini-tutorials
+            !currentlyRunningInAppTutorial.isMiniTutorial && // Don't save the progress of mini-tutorials
             inAppTutorialOrchestratorRef.current
           ) {
             preferences.saveTutorialProgress({
@@ -2588,7 +2584,7 @@ const MainFrame = (props: Props) => {
             }));
           }
 
-          unsavedChanges.sealUnsavedChanges();
+          sealUnsavedChanges({ setCheckpointTime: true });
           _replaceSnackMessage(i18n._(t`Project properly saved`));
         }
       } catch (error) {
@@ -2618,7 +2614,7 @@ const MainFrame = (props: Props) => {
       _closeSnackMessage,
       _replaceSnackMessage,
       i18n,
-      unsavedChanges,
+      sealUnsavedChanges,
       saveProjectAs,
       state.editorTabs,
       getStorageProvider,
@@ -2634,6 +2630,11 @@ const MainFrame = (props: Props) => {
     ]
   );
 
+  const renderSaveReminder = useSaveReminder({
+    onSave: saveProject,
+    project: currentProject,
+  });
+
   /**
    * Returns true if the project has been closed and false if the user refused to close it.
    */
@@ -2641,7 +2642,7 @@ const MainFrame = (props: Props) => {
     async (): Promise<boolean> => {
       if (!currentProject) return true;
 
-      if (unsavedChanges.hasUnsavedChanges) {
+      if (hasUnsavedChanges) {
         const answer = Window.showConfirmDialog(
           i18n._(
             t`Close the project? Any changes that have not been saved will be lost.`
@@ -2652,7 +2653,7 @@ const MainFrame = (props: Props) => {
       await closeProject();
       return true;
     },
-    [currentProject, unsavedChanges, i18n, closeProject]
+    [currentProject, hasUnsavedChanges, i18n, closeProject]
   );
 
   const _onChangeEditorTab = (value: number) => {
@@ -2738,6 +2739,11 @@ const MainFrame = (props: Props) => {
     [preferences, authenticatedUser.profile]
   );
 
+  useOpenInitialDialog({
+    openInAppTutorialDialog: selectInAppTutorial,
+    openProfileDialog,
+  });
+
   const onChangeProjectName = async (newName: string): Promise<void> => {
     if (!currentProject || !currentFileMetadata) return;
     const storageProviderOperations = getStorageProviderOperations();
@@ -2749,7 +2755,7 @@ const MainFrame = (props: Props) => {
         { name: newName }
       );
       if (fileMetadataNewAttributes) {
-        unsavedChanges.sealUnsavedChanges();
+        sealUnsavedChanges({ setCheckpointTime: true });
         newFileMetadata = { ...newFileMetadata, ...fileMetadataNewAttributes };
       }
     }
@@ -3138,7 +3144,6 @@ const MainFrame = (props: Props) => {
             }}
             onShareProject={() => openShareDialog()}
             freezeUpdate={!projectManagerOpen}
-            unsavedChanges={unsavedChanges}
             hotReloadPreviewButtonProps={hotReloadPreviewButtonProps}
             resourceManagementProps={resourceManagementProps}
           />
@@ -3493,11 +3498,12 @@ const MainFrame = (props: Props) => {
       {renderResourceMoverDialog()}
       {renderResourceFetcherDialog()}
       {renderVersionHistoryPanel()}
+      {renderSaveReminder()}
       <CloseConfirmDialog
         shouldPrompt={!!state.currentProject}
         i18n={props.i18n}
         language={props.i18n.language}
-        hasUnsavedChanges={unsavedChanges.hasUnsavedChanges}
+        hasUnsavedChanges={hasUnsavedChanges}
       />
       <ChangelogDialogContainer />
       {selectedInAppTutorialInfo && (
@@ -3550,7 +3556,7 @@ const MainFrame = (props: Props) => {
             if (
               shouldWarnAboutUnsavedChanges &&
               currentProject &&
-              (!currentFileMetadata || unsavedChanges.hasUnsavedChanges)
+              (!currentFileMetadata || hasUnsavedChanges)
             ) {
               setQuitInAppTutorialDialogOpen(true);
             } else {
@@ -3565,9 +3571,7 @@ const MainFrame = (props: Props) => {
           onSaveProject={saveProject}
           onClose={() => setQuitInAppTutorialDialogOpen(false)}
           isSavingProject={isSavingProject}
-          canEndTutorial={
-            !!currentFileMetadata && !unsavedChanges.hasUnsavedChanges
-          }
+          canEndTutorial={!!currentFileMetadata && !hasUnsavedChanges}
           endTutorial={() => {
             endTutorial(true);
           }}

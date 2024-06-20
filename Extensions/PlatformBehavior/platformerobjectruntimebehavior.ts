@@ -11,6 +11,60 @@ namespace gdjs {
     isCollidingAnyPlatform: boolean;
   };
 
+  interface OnFloorStateNetworkSyncData {
+    flx: number;
+    fly: number;
+    oh: number;
+  }
+
+  interface FallingStateNetworkSyncData {}
+
+  interface JumpingStateNetworkSyncData {
+    cjs: number;
+    tscjs: number;
+    jkhsjs: boolean;
+    jfd: boolean;
+  }
+
+  interface GrabbingPlatformStateNetworkSyncData {
+    gplx: float;
+    gply: float;
+  }
+
+  interface OnLadderStateNetworkSyncData {}
+
+  type StateNetworkSyncData =
+    | OnFloorStateNetworkSyncData
+    | FallingStateNetworkSyncData
+    | JumpingStateNetworkSyncData
+    | GrabbingPlatformStateNetworkSyncData
+    | OnLadderStateNetworkSyncData;
+
+  interface PlatformerObjectNetworkSyncDataType {
+    cs: float;
+    rdx: float;
+    rdy: float;
+    ldy: float;
+    cfs: float;
+    cj: boolean;
+    ldl: boolean;
+    lek: boolean;
+    rik: boolean;
+    lak: boolean;
+    upk: boolean;
+    dok: boolean;
+    juk: boolean;
+    rpk: boolean;
+    rlk: boolean;
+    sn: string;
+    ssd: StateNetworkSyncData;
+  }
+
+  export interface PlatformerObjectNetworkSyncData
+    extends BehaviorNetworkSyncData {
+    props: PlatformerObjectNetworkSyncDataType;
+  }
+
   /**
    * PlatformerObjectRuntimeBehavior represents a behavior allowing objects to be
    * considered as a platform by objects having PlatformerObject Behavior.
@@ -86,6 +140,15 @@ namespace gdjs {
     _releasePlatformKey: boolean = false;
     _releaseLadderKey: boolean = false;
 
+    // This is useful when the object is synchronized by an external source
+    // like in a multiplayer game, and we want to be able to predict the
+    // movement of the object, even if the inputs are not updated every frame.
+    _dontClearInputsBetweenFrames: boolean = false;
+    // This is useful when the object is synchronized over the network,
+    // object is controlled by the network and we want to ensure the current player
+    // cannot control it.
+    _ignoreDefaultControlsAsSyncedByNetwork: boolean = false;
+
     // This is useful for extensions that need to know
     // which keys were pressed and doesn't know the mapping
     // done by the scene events.
@@ -154,6 +217,123 @@ namespace gdjs {
       this._grabbingPlatform = new GrabbingPlatform(this);
       this._onLadder = new OnLadder(this);
       this._state = this._falling;
+    }
+
+    getNetworkSyncData(): PlatformerObjectNetworkSyncData {
+      // This method is called, so we are synchronizing this object.
+      // Let's clear the inputs between frames as we control it.
+      this._dontClearInputsBetweenFrames = false;
+      this._ignoreDefaultControlsAsSyncedByNetwork = false;
+
+      return {
+        ...super.getNetworkSyncData(),
+        props: {
+          cs: this._currentSpeed,
+          rdx: this._requestedDeltaX,
+          rdy: this._requestedDeltaY,
+          ldy: this._lastDeltaY,
+          cfs: this._currentFallSpeed,
+          cj: this._canJump,
+          ldl: this._lastDirectionIsLeft,
+          lek: this._wasLeftKeyPressed,
+          rik: this._wasRightKeyPressed,
+          lak: this._wasLadderKeyPressed,
+          upk: this._wasUpKeyPressed,
+          dok: this._wasDownKeyPressed,
+          juk: this._wasJumpKeyPressed,
+          rpk: this._wasReleasePlatformKeyPressed,
+          rlk: this._wasReleaseLadderKeyPressed,
+          sn: this._state.toString(),
+          ssd: this._state.getNetworkSyncData(),
+        },
+      };
+    }
+
+    updateFromNetworkSyncData(
+      networkSyncData: PlatformerObjectNetworkSyncData
+    ) {
+      super.updateFromNetworkSyncData(networkSyncData);
+
+      const behaviorSpecificProps = networkSyncData.props;
+      if (behaviorSpecificProps.cs !== this._currentSpeed) {
+        this._currentSpeed = behaviorSpecificProps.cs;
+      }
+      if (behaviorSpecificProps.rdx !== this._requestedDeltaX) {
+        this._requestedDeltaX = behaviorSpecificProps.rdx;
+      }
+      if (behaviorSpecificProps.rdy !== this._requestedDeltaY) {
+        this._requestedDeltaY = behaviorSpecificProps.rdy;
+      }
+      if (behaviorSpecificProps.ldy !== this._lastDeltaY) {
+        this._lastDeltaY = behaviorSpecificProps.ldy;
+      }
+      if (behaviorSpecificProps.cfs !== this._currentFallSpeed) {
+        this._currentFallSpeed = behaviorSpecificProps.cfs;
+      }
+      if (behaviorSpecificProps.cj !== this._canJump) {
+        this._canJump = behaviorSpecificProps.cj;
+      }
+      if (behaviorSpecificProps.ldl !== this._lastDirectionIsLeft) {
+        this._lastDirectionIsLeft = behaviorSpecificProps.ldl;
+      }
+      if (behaviorSpecificProps.lek !== this._leftKey) {
+        this._leftKey = behaviorSpecificProps.lek;
+      }
+      if (behaviorSpecificProps.rik !== this._rightKey) {
+        this._rightKey = behaviorSpecificProps.rik;
+      }
+      if (behaviorSpecificProps.lak !== this._ladderKey) {
+        this._ladderKey = behaviorSpecificProps.lak;
+      }
+      if (behaviorSpecificProps.upk !== this._upKey) {
+        this._upKey = behaviorSpecificProps.upk;
+      }
+      if (behaviorSpecificProps.dok !== this._downKey) {
+        this._downKey = behaviorSpecificProps.dok;
+      }
+      if (behaviorSpecificProps.juk !== this._jumpKey) {
+        this._jumpKey = behaviorSpecificProps.juk;
+      }
+      if (behaviorSpecificProps.rpk !== this._releasePlatformKey) {
+        this._releasePlatformKey = behaviorSpecificProps.rpk;
+      }
+      if (behaviorSpecificProps.rlk !== this._releaseLadderKey) {
+        this._releaseLadderKey = behaviorSpecificProps.rlk;
+      }
+
+      if (behaviorSpecificProps.sn !== this._state.toString()) {
+        switch (behaviorSpecificProps.sn) {
+          case 'Falling':
+            this._setFalling();
+            break;
+          case 'OnFloor':
+            // Let it handle automatically as we don't know which platform to land on.
+            break;
+          case 'Jumping':
+            this._setJumping();
+            break;
+          case 'GrabbingPlatform':
+            // Let it handle automatically as we don't know which platform to grab.
+            break;
+          case 'OnLadder':
+            this._setOnLadder();
+            break;
+          default:
+            console.error(
+              'Unknown state name: ' + behaviorSpecificProps.sn + '.'
+            );
+            break;
+        }
+      }
+
+      if (behaviorSpecificProps.sn === this._state.toString()) {
+        this._state.updateFromNetworkSyncData(behaviorSpecificProps.ssd);
+      }
+
+      // When the object is synchronized from the network, the inputs must not be cleared.
+      this._dontClearInputsBetweenFrames = true;
+      // And we are not using the default controls.
+      this._ignoreDefaultControlsAsSyncedByNetwork = true;
     }
 
     updateFromBehaviorData(oldBehaviorData, newBehaviorData): boolean {
@@ -228,32 +408,38 @@ namespace gdjs {
       const inputManager = instanceContainer.getGame().getInputManager();
       this._leftKey ||
         (this._leftKey =
-          !this._ignoreDefaultControls && inputManager.isKeyPressed(LEFTKEY));
+          !this.shouldIgnoreDefaultControls() &&
+          inputManager.isKeyPressed(LEFTKEY));
       this._rightKey ||
         (this._rightKey =
-          !this._ignoreDefaultControls && inputManager.isKeyPressed(RIGHTKEY));
+          !this.shouldIgnoreDefaultControls() &&
+          inputManager.isKeyPressed(RIGHTKEY));
 
       this._jumpKey ||
         (this._jumpKey =
-          !this._ignoreDefaultControls &&
+          !this.shouldIgnoreDefaultControls() &&
           (inputManager.isKeyPressed(LSHIFTKEY) ||
             inputManager.isKeyPressed(RSHIFTKEY) ||
             inputManager.isKeyPressed(SPACEKEY)));
 
       this._ladderKey ||
         (this._ladderKey =
-          !this._ignoreDefaultControls && inputManager.isKeyPressed(UPKEY));
+          !this.shouldIgnoreDefaultControls() &&
+          inputManager.isKeyPressed(UPKEY));
 
       this._upKey ||
         (this._upKey =
-          !this._ignoreDefaultControls && inputManager.isKeyPressed(UPKEY));
+          !this.shouldIgnoreDefaultControls() &&
+          inputManager.isKeyPressed(UPKEY));
       this._downKey ||
         (this._downKey =
-          !this._ignoreDefaultControls && inputManager.isKeyPressed(DOWNKEY));
+          !this.shouldIgnoreDefaultControls() &&
+          inputManager.isKeyPressed(DOWNKEY));
 
       this._releasePlatformKey ||
         (this._releasePlatformKey =
-          !this._ignoreDefaultControls && inputManager.isKeyPressed(DOWNKEY));
+          !this.shouldIgnoreDefaultControls() &&
+          inputManager.isKeyPressed(DOWNKEY));
 
       this._requestedDeltaX += this._updateSpeed(timeDelta);
 
@@ -330,14 +516,18 @@ namespace gdjs {
       this._wasReleasePlatformKeyPressed = this._releasePlatformKey;
       this._wasReleaseLadderKeyPressed = this._releaseLadderKey;
       //4) Do not forget to reset pressed keys
-      this._leftKey = false;
-      this._rightKey = false;
-      this._ladderKey = false;
-      this._upKey = false;
-      this._downKey = false;
-      this._jumpKey = false;
-      this._releasePlatformKey = false;
-      this._releaseLadderKey = false;
+      if (!this._dontClearInputsBetweenFrames) {
+        // Reset the keys only if the inputs are not supposed to survive between frames.
+        // (Most of the time, except if this object is synchronized by an external source)
+        this._leftKey = false;
+        this._rightKey = false;
+        this._ladderKey = false;
+        this._upKey = false;
+        this._downKey = false;
+        this._jumpKey = false;
+        this._releasePlatformKey = false;
+        this._releaseLadderKey = false;
+      }
 
       //5) Track the movement
       this._hasReallyMoved =
@@ -1458,6 +1648,17 @@ namespace gdjs {
     }
 
     /**
+     * Check if the default controls of the Platformer Object are ignored.
+     * @returns true if the default controls are ignored.
+     */
+    shouldIgnoreDefaultControls() {
+      return (
+        this._ignoreDefaultControls ||
+        this._ignoreDefaultControlsAsSyncedByNetwork
+      );
+    }
+
+    /**
      * Simulate the "Left" control of the Platformer Object.
      */
     simulateLeftKey() {
@@ -1652,6 +1853,10 @@ namespace gdjs {
      * Use _requestedDeltaY to choose the movement that suits the state before moving vertically.
      */
     beforeMovingY(timeDelta: float, oldX: float): void;
+
+    getNetworkSyncData(): StateNetworkSyncData;
+
+    updateFromNetworkSyncData(syncData: StateNetworkSyncData): void;
   }
 
   /**
@@ -1932,6 +2137,20 @@ namespace gdjs {
       }
     }
 
+    getNetworkSyncData(): OnFloorStateNetworkSyncData {
+      return {
+        flx: this._floorLastX,
+        fly: this._floorLastY,
+        oh: this._oldHeight,
+      };
+    }
+
+    updateFromNetworkSyncData(data: OnFloorStateNetworkSyncData) {
+      this._floorLastX = data.flx;
+      this._floorLastY = data.fly;
+      this._oldHeight = data.oh;
+    }
+
     toString(): String {
       return 'OnFloor';
     }
@@ -1988,6 +2207,12 @@ namespace gdjs {
       //Fall
       this._behavior._fall(timeDelta);
     }
+
+    getNetworkSyncData(): FallingStateNetworkSyncData {
+      return {};
+    }
+
+    updateFromNetworkSyncData(data: FallingStateNetworkSyncData) {}
 
     toString(): String {
       return 'Falling';
@@ -2102,6 +2327,22 @@ namespace gdjs {
       }
     }
 
+    getNetworkSyncData(): JumpingStateNetworkSyncData {
+      return {
+        cjs: this._currentJumpSpeed,
+        tscjs: this._timeSinceCurrentJumpStart,
+        jkhsjs: this._jumpKeyHeldSinceJumpStart,
+        jfd: this._jumpingFirstDelta,
+      };
+    }
+
+    updateFromNetworkSyncData(data: JumpingStateNetworkSyncData) {
+      this._currentJumpSpeed = data.cjs;
+      this._timeSinceCurrentJumpStart = data.tscjs;
+      this._jumpKeyHeldSinceJumpStart = data.jkhsjs;
+      this._jumpingFirstDelta = data.jfd;
+    }
+
     toString(): String {
       return 'Jumping';
     }
@@ -2174,6 +2415,18 @@ namespace gdjs {
       this._grabbedPlatformLastY = this._grabbedPlatform.owner.getY();
     }
 
+    getNetworkSyncData(): GrabbingPlatformStateNetworkSyncData {
+      return {
+        gplx: this._grabbedPlatformLastX,
+        gply: this._grabbedPlatformLastY,
+      };
+    }
+
+    updateFromNetworkSyncData(data: GrabbingPlatformStateNetworkSyncData) {
+      this._grabbedPlatformLastX = data.gplx;
+      this._grabbedPlatformLastY = data.gply;
+    }
+
     toString(): String {
       return 'GrabbingPlatform';
     }
@@ -2229,6 +2482,12 @@ namespace gdjs {
         behavior._requestedDeltaY += behavior._ladderClimbingSpeed * timeDelta;
       }
     }
+
+    getNetworkSyncData(): OnLadderStateNetworkSyncData {
+      return {};
+    }
+
+    updateFromNetworkSyncData(data: OnLadderStateNetworkSyncData) {}
 
     toString(): String {
       return 'OnLadder';

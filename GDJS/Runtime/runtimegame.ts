@@ -32,6 +32,8 @@ namespace gdjs {
     scriptFiles?: Array<RuntimeGameOptionsScriptFile>;
     /** if true, export is a partial preview without events. */
     projectDataOnlyExport?: boolean;
+    /** if true, preview is launched from GDevelop native mobile app. */
+    nativeMobileApp?: boolean;
     /** The address of the debugger server, to reach out using WebSocket. */
     websocketDebuggerServerAddress?: string;
     /** The port of the debugger server, to reach out using WebSocket. */
@@ -267,7 +269,7 @@ namespace gdjs {
      * Return the additional options passed to the RuntimeGame when created.
      * @returns The additional options, if any.
      */
-    getAdditionalOptions(): RuntimeGameOptions | null {
+    getAdditionalOptions(): RuntimeGameOptions {
       return this._options;
     }
 
@@ -403,8 +405,10 @@ namespace gdjs {
      * @param sceneName The name of the scene. If not defined, the first scene will be returned.
      * @return The data associated to the scene.
      */
-    getSceneData(sceneName?: string): SceneAndExtensionsData | null {
-      for (let i = 0, len = this._data.layouts.length; i < len; ++i) {
+    getSceneAndExtensionsData(
+      sceneName?: string
+    ): SceneAndExtensionsData | null {
+      for (let i = 0, len = this._sceneAndExtensionsData.length; i < len; ++i) {
         const sceneAndExtensionsData = this._sceneAndExtensionsData[i];
         if (
           sceneName === undefined ||
@@ -798,8 +802,8 @@ namespace gdjs {
       const firstSceneName = this._data.firstLayout;
       return this.hasScene(firstSceneName)
         ? firstSceneName
-        : // @ts-ignore - no risk of null object.
-          this.getSceneData().name;
+        : // There is always at least a scene
+          this.getSceneAndExtensionsData()!.sceneData.name;
     }
 
     /**
@@ -898,6 +902,23 @@ namespace gdjs {
       }
     }
 
+    /**
+     * Helper function to get information about the platform running the game.
+     */
+    getPlatformInfo = () => ({
+      // @ts-ignore
+      isCordova: !!window.cordova,
+      devicePlatform:
+        // @ts-ignore
+        typeof device !== 'undefined' ? device.platform || '' : '',
+      navigatorPlatform:
+        typeof navigator !== 'undefined' ? navigator.platform : '',
+      hasTouch:
+        typeof navigator !== 'undefined'
+          ? !!navigator.maxTouchPoints && navigator.maxTouchPoints > 2
+          : false,
+    });
+
     _setupGameVisibilityEvents() {
       if (typeof navigator !== 'undefined' && typeof document !== 'undefined') {
         document.addEventListener('visibilitychange', () => {
@@ -952,6 +973,7 @@ namespace gdjs {
        * either in sendedDuration or notYetSentDuration.
        **/
       let lastSessionResumeTime = Date.now();
+      const platform = this.getPlatformInfo();
       fetch(baseUrl + '/session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -968,17 +990,10 @@ namespace gdjs {
             location: window.location.href,
           },
           platform: {
-            // @ts-ignore
-            isCordova: !!window.cordova,
-            devicePlatform:
-              // @ts-ignore
-              typeof device !== 'undefined' ? device.platform || '' : '',
-            navigatorPlatform:
-              typeof navigator !== 'undefined' ? navigator.platform : '',
-            hasTouch:
-              typeof navigator !== 'undefined'
-                ? !!navigator.maxTouchPoints && navigator.maxTouchPoints > 2
-                : false,
+            isCordova: platform.isCordova,
+            devicePlatform: platform.devicePlatform,
+            navigatorPlatform: platform.navigatorPlatform,
+            hasTouch: platform.hasTouch,
           },
         }),
       })
@@ -1213,6 +1228,65 @@ namespace gdjs {
       return this._embeddedResourcesMappings.has(resourceName)
         ? Object.keys(this._embeddedResourcesMappings.get(resourceName)!)
         : [];
+    }
+
+    getNetworkSyncData(
+      syncOptions: GetNetworkSyncDataOptions
+    ): GameNetworkSyncData | null {
+      const syncData: GameNetworkSyncData = {
+        var: this._variables.getNetworkSyncData(syncOptions),
+        ss: this._sceneStack.getNetworkSyncData(syncOptions) || undefined,
+      };
+
+      const extensionsVariablesSyncData = {};
+      this._variablesByExtensionName.forEach((variables, extensionName) => {
+        const extensionVariablesSyncData = variables.getNetworkSyncData(
+          syncOptions
+        );
+        // If there is no variables to sync, don't include the extension in the sync data.
+        if (extensionVariablesSyncData.length) {
+          extensionsVariablesSyncData[
+            extensionName
+          ] = extensionVariablesSyncData;
+        }
+      });
+      syncData.extVar = extensionsVariablesSyncData;
+
+      if (
+        (!syncData.var || syncData.var.length === 0) &&
+        !syncData.ss &&
+        (!syncData.extVar || Object.keys(syncData.extVar).length === 0)
+      ) {
+        // Nothing to sync.
+        return null;
+      }
+
+      return syncData;
+    }
+
+    updateFromNetworkSyncData(syncData: GameNetworkSyncData) {
+      if (syncData.var) {
+        this._variables.updateFromNetworkSyncData(syncData.var);
+      }
+      if (syncData.ss) {
+        this._sceneStack.updateFromNetworkSyncData(syncData.ss);
+      }
+      if (syncData.extVar) {
+        for (const extensionName in syncData.extVar) {
+          if (!syncData.extVar.hasOwnProperty(extensionName)) {
+            continue;
+          }
+          const extensionVariablesData = syncData.extVar[extensionName];
+          const extensionVariables = this.getVariablesForExtension(
+            extensionName
+          );
+          if (extensionVariables) {
+            extensionVariables.updateFromNetworkSyncData(
+              extensionVariablesData
+            );
+          }
+        }
+      }
     }
   }
 }

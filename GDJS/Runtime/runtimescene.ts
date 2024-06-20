@@ -47,6 +47,14 @@ namespace gdjs {
     _cachedGameResolutionHeight: integer;
 
     /**
+     * A network ID associated to the scene to be used
+     * for multiplayer, to identify the scene across peers.
+     * A scene can have its networkId re-generated during the game, meaning
+     * that the scene is re-created on every peer.
+     */
+    networkId: string | null = null;
+
+    /**
      * @param runtimeGame The game associated to this scene.
      */
     constructor(runtimeGame: gdjs.RuntimeGame) {
@@ -114,7 +122,7 @@ namespace gdjs {
     /**
      * Load the runtime scene from the given scene.
      * @param sceneData An object containing the scene data.
-     * @see gdjs.RuntimeGame#getSceneData
+     * @see gdjs.RuntimeGame#getSceneAndExtensionsData
      */
     loadFromScene(sceneAndExtensionsData: SceneAndExtensionsData | null) {
       if (!sceneAndExtensionsData) {
@@ -312,6 +320,7 @@ namespace gdjs {
       this._initialBehaviorSharedData = new Hashtable();
       this._eventsFunction = null;
       this._lastId = 0;
+      this.networkId = null;
       // @ts-ignore We are deleting the object
       this._onceTriggers = null;
     }
@@ -761,6 +770,77 @@ namespace gdjs {
      */
     sceneJustResumed(): boolean {
       return this._isJustResumed;
+    }
+
+    getNetworkSyncData(
+      syncOptions: GetNetworkSyncDataOptions
+    ): LayoutNetworkSyncData | null {
+      const syncedPlayerNumber = syncOptions.playerNumber;
+      const variablesNetworkSyncData = this._variables.getNetworkSyncData(
+        syncOptions
+      );
+      const extensionsVariablesSyncData = {};
+      this._variablesByExtensionName.forEach((variables, extensionName) => {
+        const extensionVariablesSyncData = variables.getNetworkSyncData(
+          syncOptions
+        );
+        // If there is no variables to sync, don't include the extension in the sync data.
+        if (extensionVariablesSyncData) {
+          extensionsVariablesSyncData[
+            extensionName
+          ] = extensionVariablesSyncData;
+        }
+      });
+
+      if (
+        syncedPlayerNumber !== undefined &&
+        syncedPlayerNumber !== 1 &&
+        (!this.networkId ||
+          (variablesNetworkSyncData.length === 0 &&
+            !Object.keys(extensionsVariablesSyncData).length))
+      ) {
+        // If we are getting sync data for a specific player,
+        // and they are not the host, there is no sync data to send if:
+        // - The scene has no networkId (it's either not a multiplayer scene or the scene is not yet networked).
+        // - There are no variables to sync in the scene or extensions.
+        return null;
+      }
+
+      return {
+        var: variablesNetworkSyncData,
+        extVar: extensionsVariablesSyncData,
+        id: this.getOrCreateNetworkId(),
+      };
+    }
+
+    updateFromNetworkSyncData(syncData: LayoutNetworkSyncData) {
+      if (syncData.var) {
+        this._variables.updateFromNetworkSyncData(syncData.var);
+      }
+      if (syncData.extVar) {
+        for (const extensionName in syncData.extVar) {
+          if (!syncData.extVar.hasOwnProperty(extensionName)) {
+            continue;
+          }
+          const extensionVariablesData = syncData.extVar[extensionName];
+          const extensionVariables = this._variablesByExtensionName.get(
+            extensionName
+          );
+          if (extensionVariables) {
+            extensionVariables.updateFromNetworkSyncData(
+              extensionVariablesData
+            );
+          }
+        }
+      }
+    }
+
+    getOrCreateNetworkId(): string {
+      if (!this.networkId) {
+        const newNetworkId = gdjs.makeUuid().substring(0, 8);
+        this.networkId = newNetworkId;
+      }
+      return this.networkId;
     }
   }
 

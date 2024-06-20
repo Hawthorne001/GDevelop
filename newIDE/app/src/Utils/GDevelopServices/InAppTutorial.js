@@ -18,6 +18,9 @@ export const HEALTH_BAR_IN_APP_TUTORIAL_ID = 'healthBar';
 export const JOYSTICK_IN_APP_TUTORIAL_ID = 'joystick';
 export const TIMER_IN_APP_TUTORIAL_ID = 'timer';
 export const OBJECT_3D_IN_APP_TUTORIAL_ID = 'object3d';
+export const KNIGHT_PLATFORMER_IN_APP_TUTORIAL_ID = 'knightPlatformer';
+export const TOP_DOWN_RPG_MOVEMENT_ID = 'topDownRPGMovement';
+export const FIRE_A_BULLET = 'fireABullet';
 
 export const guidedLessonsIds = [
   PLINKO_MULTIPLIER_IN_APP_TUTORIAL_ID,
@@ -26,18 +29,20 @@ export const guidedLessonsIds = [
   HEALTH_BAR_IN_APP_TUTORIAL_ID,
   JOYSTICK_IN_APP_TUTORIAL_ID,
   OBJECT_3D_IN_APP_TUTORIAL_ID,
+  KNIGHT_PLATFORMER_IN_APP_TUTORIAL_ID,
+  TOP_DOWN_RPG_MOVEMENT_ID,
+  FIRE_A_BULLET,
 ];
-
-const fullTutorialIds = [FLING_GAME_IN_APP_TUTORIAL_ID];
-
-export const allInAppTutorialIds = [...guidedLessonsIds, ...fullTutorialIds];
 
 export type InAppTutorialShortHeader = {|
   id: string,
+  titleByLocale: MessageByLocale,
+  bulletPointsByLocale: Array<MessageByLocale>,
   contentUrl: string,
   availableLocales: Array<string>,
   initialTemplateUrl?: string,
   initialProjectData?: { [key: string]: string },
+  isMiniTutorial?: boolean,
 |};
 
 export type EditorIdentifier =
@@ -64,7 +69,7 @@ export type InAppTutorialFlowStepTrigger =
   | InAppTutorialFlowStepDOMChangeTrigger
   | {| editorIsActive: string |}
   | {| valueHasChanged: true |}
-  | {| valueEquals: string |}
+  | {| valueEquals: string | boolean |}
   | {| instanceAddedOnScene: string, instancesCount?: number |}
   | {| objectAddedInLayout: true |}
   | {| previewLaunched: true |}
@@ -74,7 +79,7 @@ export type InAppTutorialFlowStepFormattedTrigger =
   | InAppTutorialFlowStepDOMChangeTrigger
   | {| editorIsActive: string |}
   | {| valueHasChanged: true |}
-  | {| valueEquals: string |}
+  | {| valueEquals: string | boolean |}
   | {| instanceAddedOnScene: string, instancesCount?: number |}
   | {| objectAddedInLayout: true |}
   | {| previewLaunched: true |}
@@ -137,6 +142,7 @@ export type InAppTutorial = {|
   },
   endDialog: InAppTutorialDialog,
   availableLocales?: Array<string>,
+  isMiniTutorial?: boolean,
 |};
 
 const fetchLocalFileIfDesktop = async (filename: string): Promise<?Object> => {
@@ -195,13 +201,3 @@ export const fetchInAppTutorial = async (
   const response = await axios.get(shortHeader.contentUrl);
   return response.data;
 };
-
-export const isMiniTutorial = (tutorialId: string) =>
-  [
-    PLINKO_MULTIPLIER_IN_APP_TUTORIAL_ID,
-    TIMER_IN_APP_TUTORIAL_ID,
-    CAMERA_PARALLAX_IN_APP_TUTORIAL_ID,
-    HEALTH_BAR_IN_APP_TUTORIAL_ID,
-    JOYSTICK_IN_APP_TUTORIAL_ID,
-    OBJECT_3D_IN_APP_TUTORIAL_ID,
-  ].includes(tutorialId);
